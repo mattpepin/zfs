@@ -140,7 +140,7 @@ zpl_xattr_filldir(xattr_filldir_t *xf, const char *name, int name_len)
 		if (xf->offset + prefix_len + name_len + 1 > xf->size)
 			return (-ERANGE);
 
-#ifdef NO_USER_PREFIX:		
+#ifdef NO_USER_PREFIX
 		memcpy(xf->buf + xf->offset, XATTR_USER_PREFIX, prefix_len);
 #endif
 		memcpy(xf->buf + xf->offset + prefix_len, name, name_len);
@@ -719,7 +719,6 @@ static int
 __zpl_xattr_user_set(struct inode *ip, const char *name,
     const void *value, size_t size, int flags)
 {
-	char *xattr_name;
 	int error;
 	/* xattr_resolve_name will do this for us if this is defined */
 #ifndef HAVE_XATTR_HANDLER_NAME
@@ -732,6 +731,7 @@ __zpl_xattr_user_set(struct inode *ip, const char *name,
 #ifdef NO_USER_PREFIX
 	error = zpl_xattr_set(ip, name, value, size, flags);
 #else
+	char *xattr_name;
 	xattr_name = kmem_asprintf("%s%s", XATTR_USER_PREFIX, name);
 	error = zpl_xattr_set(ip, xattr_name, value, size, flags);
 	strfree(xattr_name);
