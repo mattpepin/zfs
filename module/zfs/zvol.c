@@ -34,7 +34,6 @@
  * Volumes are persistent through reboot and module load.  No user command
  * needs to be run before opening and using a device.
  *
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2016 Actifio, Inc. All rights reserved.
  */
 
@@ -633,35 +632,31 @@ zvol_write(zvol_state_t *zv, uio_t *uio, boolean_t sync)
 
 	ASSERT(zv && zv->zv_open_count > 0);
 
+	if (bio_is_flush(bio))
+		zil_commit(zv->zv_zilog, ZVOL_OBJ);
+
 	rl = zfs_range_lock(&zv->zv_range_lock, uio->uio_loffset,
 	    uio->uio_resid, RL_WRITER);
 
-	while (uio->uio_resid > 0 && uio->uio_loffset < volsize) {
-		uint64_t bytes = MIN(uio->uio_resid, DMU_MAX_ACCESS >> 1);
-		uint64_t off = uio->uio_loffset;
-		dmu_tx_t *tx = dmu_tx_create(zv->zv_objset);
+	rl = zfs_range_lock(&zv->zv_range_lock, offset, size, RL_WRITER);
 
 		if (bytes > volsize - off)	/* don't write past the end */
 			bytes = volsize - off;
 
 		dmu_tx_hold_write(tx, ZVOL_OBJ, off, bytes);
 
-		/* This will only fail for ENOSPC */
-		error = dmu_tx_assign(tx, TXG_WAIT);
-		if (error) {
-			dmu_tx_abort(tx);
-			break;
-		}
-		error = dmu_write_uio_dbuf(zv->zv_dbuf, uio, bytes, tx);
-		if (error == 0)
-			zvol_log_write(zv, tx, off, bytes, sync);
-		dmu_tx_commit(tx);
+	error = dmu_write_bio(zv->zv_objset, ZVOL_OBJ, bio, tx);
+	if (error == 0)
+		zvol_log_write(zv, tx, offset, size,
+		    !!(bio_is_fua(bio)));
 
 		if (error)
 			break;
 	}
 	zfs_range_unlock(rl);
-	if (sync)
+
+	if ((bio_is_fua(bio)) ||
+	    zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS)
 		zil_commit(zv->zv_zilog, ZVOL_OBJ);
 	return (error);
 }
@@ -703,41 +698,33 @@ zvol_discard(struct bio *bio)
 
 	ASSERT(zv && zv->zv_open_count > 0);
 
+	ASSERT(zv && zv->zv_open_count > 0);
+
 	if (end > zv->zv_volsize)
 		return (SET_ERROR(EIO));
 
 	/*
-	 * Align the request to volume block boundaries when REQ_SECURE is
-	 * available, but not requested. If we don't, then this will force
-	 * dnode_free_range() to zero out the unaligned parts, which is slow
-	 * (read-modify-write) and useless since we are not freeing any space
-	 * by doing so. Kernels that do not support REQ_SECURE (2.6.32 through
-	 * 2.6.35) will not receive this optimization.
+	 * Align the request to volume block boundaries when a secure erase is
+	 * not required.  This will prevent dnode_free_range() from zeroing out
+	 * the unaligned parts which is slow (read-modify-write) and useless
+	 * since we are not freeing any space by doing so.
 	 */
-#ifdef REQ_SECURE
-	if (!(bio->bi_rw & REQ_SECURE)) {
+	if (!bio_is_secure_erase(bio)) {
 		start = P2ROUNDUP(start, zv->zv_volblocksize);
 		end = P2ALIGN(end, zv->zv_volblocksize);
 		size = end - start;
 	}
-#endif
 
 	if (start >= end)
 		return (0);
 
 	rl = zfs_range_lock(&zv->zv_range_lock, start, size, RL_WRITER);
-	tx = dmu_tx_create(zv->zv_objset);
-	dmu_tx_mark_netfree(tx);
-	error = dmu_tx_assign(tx, TXG_WAIT);
-	if (error != 0) {
-		dmu_tx_abort(tx);
-	} else {
-		zvol_log_truncate(zv, tx, start, size, B_TRUE);
-		dmu_tx_commit(tx);
-		error = dmu_free_long_range(zv->zv_objset,
-		    ZVOL_OBJ, start, size);
-	}
 
+	error = dmu_free_long_range(zv->zv_objset, ZVOL_OBJ, start, size);
+
+	/*
+	 * TODO: maybe we should add the operation to the log.
+	 */
 	zfs_range_unlock(rl);
 
 	return (error);
@@ -752,10 +739,10 @@ zvol_read(zvol_state_t *zv, uio_t *uio)
 
 	ASSERT(zv && zv->zv_open_count > 0);
 
-	rl = zfs_range_lock(&zv->zv_range_lock, uio->uio_loffset,
-	    uio->uio_resid, RL_READER);
-	while (uio->uio_resid > 0 && uio->uio_loffset < volsize) {
-		uint64_t bytes = MIN(uio->uio_resid, DMU_MAX_ACCESS >> 1);
+	if (len == 0)
+		return (0);
+
+	rl = zfs_range_lock(&zv->zv_range_lock, offset, len, RL_READER);
 
 		/* don't read past the end */
 		if (bytes > volsize - uio->uio_loffset)
@@ -812,7 +799,7 @@ zvol_request(struct request_queue *q, struct bio *bio)
 			goto out2;
 		}
 
-		if (bio->bi_rw & VDEV_REQ_DISCARD) {
+		if (bio_is_discard(bio) || bio_is_secure_erase(bio)) {
 			error = zvol_discard(bio);
 			goto out2;
 		}
@@ -1290,14 +1277,7 @@ zvol_alloc(dev_t dev, const char *name)
 		goto out_kmem;
 
 	blk_queue_make_request(zv->zv_queue, zvol_request);
-
-#ifdef HAVE_BLK_QUEUE_WRITE_CACHE
-	blk_queue_write_cache(zv->zv_queue, B_TRUE, B_TRUE);
-#elif defined(HAVE_BLK_QUEUE_FLUSH)
-	blk_queue_flush(zv->zv_queue, VDEV_REQ_FLUSH | VDEV_REQ_FUA);
-#else
-	blk_queue_ordered(zv->zv_queue, QUEUE_ORDERED_DRAIN, NULL);
-#endif /* HAVE_BLK_QUEUE_FLUSH */
+	blk_queue_set_write_cache(zv->zv_queue, B_TRUE, B_TRUE);
 
 	zv->zv_disk = alloc_disk(ZVOL_MINORS);
 	if (zv->zv_disk == NULL)
@@ -1639,6 +1619,7 @@ zvol_remove_minors_impl(const char *name)
 
 			zvol_remove(zv);
 			zvol_free(zv);
+			break;
 		}
 	}
 

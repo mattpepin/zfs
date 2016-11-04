@@ -1907,7 +1907,12 @@ zpool_import_props(libzfs_handle_t *hdl, nvlist_t *config, const char *newname,
 			    "one or more devices are already in use\n"));
 			(void) zfs_error(hdl, EZFS_BADDEV, desc);
 			break;
-
+		case ENAMETOOLONG:
+			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+			    "new name of at least one dataset is longer than "
+			    "the maximum allowable length"));
+			(void) zfs_error(hdl, EZFS_NAMETOOLONG, desc);
+			break;
 		default:
 			(void) zpool_standard_error(hdl, error, desc);
 			zpool_explain_recover(hdl,
@@ -3439,7 +3444,7 @@ char *
 zpool_vdev_name(libzfs_handle_t *hdl, zpool_handle_t *zhp, nvlist_t *nv,
     int name_flags)
 {
-	char *path, *type, *env;
+	char *path, *devid, *type, *env;
 	uint64_t value;
 	char buf[PATH_BUF_LEN];
 	char tmpbuf[PATH_BUF_LEN];
@@ -3512,6 +3517,15 @@ zpool_vdev_name(libzfs_handle_t *hdl, zpool_handle_t *zhp, nvlist_t *nv,
 				devid_str_free(newdevid);
 		}
 #endif /* sun */
+
+		if (name_flags & VDEV_NAME_FOLLOW_LINKS) {
+			char *rp = realpath(path, NULL);
+			if (rp) {
+				strlcpy(buf, rp, sizeof (buf));
+				path = buf;
+				free(rp);
+			}
+		}
 
 		if (name_flags & VDEV_NAME_FOLLOW_LINKS) {
 			char *rp = realpath(path, NULL);
@@ -4114,7 +4128,7 @@ find_start_block(nvlist_t *config)
 	return (MAXOFFSET_T);
 }
 
-static int
+int
 zpool_label_disk_check(char *path)
 {
 	struct dk_gpt *vtoc;

@@ -118,7 +118,6 @@ zfs_znode_cache_constructor(void *buf, void *arg, int kmflags)
 	zp->z_dirlocks = NULL;
 	zp->z_acl_cached = NULL;
 	zp->z_xattr_cached = NULL;
-	zp->z_xattr_parent = NULL;
 	zp->z_moved = 0;
 	return (0);
 }
@@ -140,7 +139,27 @@ zfs_znode_cache_destructor(void *buf, void *arg)
 	ASSERT(zp->z_dirlocks == NULL);
 	ASSERT(zp->z_acl_cached == NULL);
 	ASSERT(zp->z_xattr_cached == NULL);
-	ASSERT(zp->z_xattr_parent == NULL);
+}
+
+static int
+zfs_znode_hold_cache_constructor(void *buf, void *arg, int kmflags)
+{
+	znode_hold_t *zh = buf;
+
+	mutex_init(&zh->zh_lock, NULL, MUTEX_DEFAULT, NULL);
+	refcount_create(&zh->zh_refcount);
+	zh->zh_obj = ZFS_NO_OBJECT;
+
+	return (0);
+}
+
+static void
+zfs_znode_hold_cache_destructor(void *buf, void *arg)
+{
+	znode_hold_t *zh = buf;
+
+	mutex_destroy(&zh->zh_lock);
+	refcount_destroy(&zh->zh_refcount);
 }
 
 static int
@@ -432,11 +451,6 @@ zfs_inode_destroy(struct inode *ip)
 		zp->z_xattr_cached = NULL;
 	}
 
-	if (zp->z_xattr_parent) {
-		zfs_iput_async(ZTOI(zp->z_xattr_parent));
-		zp->z_xattr_parent = NULL;
-	}
-
 	kmem_cache_free(znode_cache, zp);
 }
 
@@ -581,8 +595,7 @@ zfs_inode_update(znode_t *zp)
  */
 static znode_t *
 zfs_znode_alloc(zfs_sb_t *zsb, dmu_buf_t *db, int blksz,
-    dmu_object_type_t obj_type, uint64_t obj, sa_handle_t *hdl,
-    struct inode *dip)
+    dmu_object_type_t obj_type, uint64_t obj, sa_handle_t *hdl)
 {
 	znode_t	*zp;
 	struct inode *ip;
@@ -602,7 +615,6 @@ zfs_znode_alloc(zfs_sb_t *zsb, dmu_buf_t *db, int blksz,
 	ASSERT(zp->z_dirlocks == NULL);
 	ASSERT3P(zp->z_acl_cached, ==, NULL);
 	ASSERT3P(zp->z_xattr_cached, ==, NULL);
-	ASSERT3P(zp->z_xattr_parent, ==, NULL);
 	zp->z_moved = 0;
 	zp->z_sa_hdl = NULL;
 	zp->z_unlinked = 0;
@@ -643,14 +655,6 @@ zfs_znode_alloc(zfs_sb_t *zsb, dmu_buf_t *db, int blksz,
 
 	zp->z_mode = mode;
 	ip->i_generation = (uint32_t)tmp_gen;
-
-	/*
-	 * xattr znodes hold a reference on their unique parent
-	 */
-	if (dip && zp->z_pflags & ZFS_XATTR) {
-		igrab(dip);
-		zp->z_xattr_parent = ITOZ(dip);
-	}
 
 	ip->i_ino = obj;
 	zfs_inode_update_new(zp);
@@ -932,8 +936,7 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 	VERIFY(sa_replace_all_by_template(sa_hdl, sa_attrs, cnt, tx) == 0);
 
 	if (!(flag & IS_ROOT_NODE)) {
-		*zpp = zfs_znode_alloc(zsb, db, 0, obj_type, obj, sa_hdl,
-		    ZTOI(dzp));
+		*zpp = zfs_znode_alloc(zsb, db, 0, obj_type, obj, sa_hdl);
 		VERIFY(*zpp != NULL);
 		VERIFY(dzp != NULL);
 	} else {
@@ -1143,7 +1146,7 @@ again:
 	 * bonus buffer.
 	 */
 	zp = zfs_znode_alloc(zsb, db, doi.doi_data_block_size,
-	    doi.doi_bonus_type, obj_num, NULL, NULL);
+	    doi.doi_bonus_type, obj_num, NULL);
 	if (zp == NULL) {
 		err = SET_ERROR(ENOENT);
 	} else {
@@ -1190,11 +1193,6 @@ zfs_rezget(znode_t *zp)
 	if (zp->z_xattr_cached) {
 		nvlist_free(zp->z_xattr_cached);
 		zp->z_xattr_cached = NULL;
-	}
-
-	if (zp->z_xattr_parent) {
-		zfs_iput_async(ZTOI(zp->z_xattr_parent));
-		zp->z_xattr_parent = NULL;
 	}
 	rw_exit(&zp->z_xattr_lock);
 

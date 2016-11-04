@@ -436,6 +436,10 @@ _NOTE(CONSTCOND) } while (0)
 	DVA_EQUAL(&(bp1)->blk_dva[2], &(bp2)->blk_dva[2]))
 
 
+#define	ZIO_CHECKSUM_IS_ZERO(zc) \
+	(0 == ((zc)->zc_word[0] | (zc)->zc_word[1] | \
+	(zc)->zc_word[2] | (zc)->zc_word[3]))
+
 #define	DVA_IS_VALID(dva)	(DVA_GET_ASIZE(dva) != 0)
 
 #define	BP_IDENTITY(bp)		(ASSERT(!BP_IS_EMBEDDED(bp)), &(bp)->blk_dva[0])

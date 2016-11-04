@@ -101,25 +101,8 @@ typedef struct pool_list {
 
 #define	DEV_BYID_PATH	"/dev/disk/by-id/"
 
-/*
- * Linux persistent device strings for vdev labels
- *
- * based on libudev for consistency with libudev disk add/remove events
- */
-#ifdef HAVE_LIBUDEV
-
-typedef struct vdev_dev_strs {
-	char	vds_devid[128];
-	char	vds_devphys[128];
-} vdev_dev_strs_t;
-
-/*
- * Obtain the persistent device id string (describes what)
- *
- * used by ZED auto-{online,expand,replace}
- */
-static int
-udev_device_get_devid(struct udev_device *dev, char *bufptr, size_t buflen)
+static char *
+get_devid(const char *path)
 {
 	struct udev_list_entry *entry;
 	const char *bus;
@@ -338,6 +321,40 @@ zpool_label_disk_wait(char *path, int timeout_ms)
 	return (ret);
 }
 
+/*
+ * Wait up to timeout_ms for udev to set up the device node.  The device is
+ * considered ready when the provided path have been verified to exist and
+ * it has been allowed to settle.  At this point the device the device can
+ * be accessed reliably.  Depending on the complexity of the udev rules thisi
+ * process could take several seconds.
+ */
+int
+zpool_label_disk_wait(char *path, int timeout_ms)
+{
+	int settle_ms = 50;
+	long sleep_ms = 10;
+	hrtime_t start, settle;
+	struct stat64 statbuf;
+
+	start = gethrtime();
+	settle = 0;
+
+	do {
+		errno = 0;
+		if ((stat64(path, &statbuf) == 0) && (errno == 0)) {
+			if (settle == 0)
+				settle = gethrtime();
+			else if (NSEC2MSEC(gethrtime() - settle) >= settle_ms)
+				return (0);
+		} else if (errno != ENOENT) {
+			return (errno);
+		}
+
+		usleep(sleep_ms * MILLISEC);
+	} while (NSEC2MSEC(gethrtime() - start) < timeout_ms);
+
+	return (ENODEV);
+}
 
 /*
  * Encode the persistent devices strings
@@ -760,6 +777,7 @@ add_config(libzfs_handle_t *hdl, pool_list_t *pl, const char *path,
 	return (0);
 }
 
+#ifdef HAVE_LIBBLKID
 static int
 add_path(libzfs_handle_t *hdl, pool_list_t *pools, uint64_t pool_guid,
     uint64_t vdev_guid, const char *path, int order)
@@ -869,6 +887,7 @@ add_configs_from_label(libzfs_handle_t *hdl, pool_list_t *pools,
 
 	return (error);
 }
+#endif /* HAVE_LIBBLKID */
 
 /*
  * Returns true if the named pool matches the given GUID.

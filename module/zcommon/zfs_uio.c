@@ -180,7 +180,6 @@ uio_prefaultpages(ssize_t n, struct uio *uio)
 
 	iov = uio->uio_iov;
 	iovcnt = uio->uio_iovcnt;
-	skip = uio->uio_skip;
 
 	for (; n > 0 && iovcnt > 0; iov++, iovcnt--, skip = 0) {
 		cnt = MIN(iov->iov_len - skip, n);

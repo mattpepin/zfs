@@ -170,6 +170,9 @@ spa_config_write(spa_config_dirent_t *dp, nvlist_t *nvl)
 	buf = fnvlist_pack(nvl, &buflen);
 	temp = kmem_zalloc(MAXPATHLEN, KM_SLEEP);
 
+	VERIFY(nvlist_pack(nvl, &buf, &buflen, NV_ENCODE_XDR,
+	    KM_SLEEP) == 0);
+
 #if defined(__linux__) && defined(_KERNEL)
 	/*
 	 * Write the configuration to disk.  Due to the complexity involved
@@ -197,14 +200,13 @@ spa_config_write(spa_config_dirent_t *dp, nvlist_t *nvl)
 	 */
 	(void) snprintf(temp, MAXPATHLEN, "%s.tmp", dp->scd_path);
 
-	err = vn_open(temp, UIO_SYSSPACE, oflags, 0644, &vp, CRCREAT, 0);
-	if (err == 0) {
-		err = vn_rdwr(UIO_WRITE, vp, buf, buflen, 0, UIO_SYSSPACE,
-		    0, RLIM64_INFINITY, kcred, NULL);
-		if (err == 0)
-			err = VOP_FSYNC(vp, FSYNC, kcred, NULL);
-		if (err == 0)
-			err = vn_rename(temp, dp->scd_path, UIO_SYSSPACE);
+	error = vn_open(temp, UIO_SYSSPACE, oflags, 0644, &vp, CRCREAT, 0);
+	if (error == 0) {
+		if (vn_rdwr(UIO_WRITE, vp, buf, buflen, 0, UIO_SYSSPACE,
+		    0, RLIM64_INFINITY, kcred, NULL) == 0 &&
+		    VOP_FSYNC(vp, FSYNC, kcred, NULL) == 0) {
+			(void) vn_rename(temp, dp->scd_path, UIO_SYSSPACE);
+		}
 		(void) VOP_CLOSE(vp, oflags, 1, 0, kcred, NULL);
 	}
 

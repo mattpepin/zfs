@@ -131,19 +131,9 @@ zpl_xattr_permission(xattr_filldir_t *xf, const char *name, int name_len)
 static int
 zpl_xattr_filldir(xattr_filldir_t *xf, const char *name, int name_len)
 {
-	int prefix_len = 0;
-
 	/* Check permissions using the per-namespace list xattr handler. */
-	if (!zpl_xattr_permission(xf, name, name_len)) {
-#ifdef NO_USER_PREFIX
-		if (zpl_xattr_handler(name))
-			return (0);
-		else
-			prefix_len = strlen(XATTR_USER_PREFIX);
-#else
+	if (!zpl_xattr_permission(xf, name, name_len))
 		return (0);
-#endif		
-	}
 
 	/* When xf->buf is NULL only calculate the required size. */
 	if (xf->buf) {
@@ -1042,11 +1032,16 @@ zpl_get_acl(struct inode *ip, int type)
 	char *name;
 	int size;
 
-#ifdef HAVE_POSIX_ACL_CACHING
+	/*
+	 * As of Linux 3.14, the kernel get_acl will check this for us.
+	 * Also as of Linux 4.7, comparing against ACL_NOT_CACHED is wrong
+	 * as the kernel get_acl will set it to temporary sentinel value.
+	 */
+#ifndef HAVE_KERNEL_GET_ACL_HANDLE_CACHE
 	acl = get_cached_acl(ip, type);
 	if (acl != ACL_NOT_CACHED)
 		return (acl);
-#endif /* HAVE_POSIX_ACL_CACHING */
+#endif
 
 	switch (type) {
 	case ACL_TYPE_ACCESS:
@@ -1076,8 +1071,11 @@ zpl_get_acl(struct inode *ip, int type)
 	if (size > 0)
 		kmem_free(value, size);
 
+	/* As of Linux 4.7, the kernel get_acl will set this for us */
+#ifndef HAVE_KERNEL_GET_ACL_HANDLE_CACHE
 	if (!IS_ERR(acl))
 		zpl_set_cached_acl(ip, type, acl);
+#endif
 
 	return (acl);
 }
@@ -1315,7 +1313,7 @@ __zpl_xattr_acl_set_access(struct inode *ip, const char *name,
 		if (IS_ERR(acl))
 			return (PTR_ERR(acl));
 		else if (acl) {
-			error = posix_acl_valid(acl);
+			error = zpl_posix_acl_valid(ip, acl);
 			if (error) {
 				zpl_posix_acl_release(acl);
 				return (error);
@@ -1355,7 +1353,7 @@ __zpl_xattr_acl_set_default(struct inode *ip, const char *name,
 		if (IS_ERR(acl))
 			return (PTR_ERR(acl));
 		else if (acl) {
-			error = posix_acl_valid(acl);
+			error = zpl_posix_acl_valid(ip, acl);
 			if (error) {
 				zpl_posix_acl_release(acl);
 				return (error);

@@ -59,7 +59,8 @@ zpl_lookup(struct inode *dir, struct dentry *dentry, unsigned int flags)
 	/* If we are a case insensitive fs, we need the real name */
 	if (zsb->z_case == ZFS_CASE_INSENSITIVE) {
 		zfs_flags = FIGNORECASE;
-		pn_alloc(&pn);
+		pn.pn_bufsize = ZFS_MAXNAMELEN;
+		pn.pn_buf = kmem_zalloc(ZFS_MAXNAMELEN, KM_SLEEP);
 		ppn = &pn;
 	}
 
@@ -82,7 +83,7 @@ zpl_lookup(struct inode *dir, struct dentry *dentry, unsigned int flags)
 		 * Fall through if the error is not ENOENT. Also free memory.
 		 */
 		if (ppn) {
-			pn_free(ppn);
+			kmem_free(pn.pn_buf, ZFS_MAXNAMELEN);
 			if (error == -ENOENT)
 				return (NULL);
 		}
@@ -104,7 +105,7 @@ zpl_lookup(struct inode *dir, struct dentry *dentry, unsigned int flags)
 		ci_name.name = pn.pn_buf;
 		ci_name.len = strlen(pn.pn_buf);
 		new_dentry = d_add_ci(dentry, ip, &ci_name);
-		pn_free(ppn);
+		kmem_free(pn.pn_buf, ZFS_MAXNAMELEN);
 		return (new_dentry);
 	} else {
 		return (d_splice_alias(ip, dentry));
@@ -220,7 +221,7 @@ zpl_unlink(struct inode *dir, struct dentry *dentry)
 
 	crhold(cr);
 	cookie = spl_fstrans_mark();
-	error = -zfs_remove(dir, dname(dentry), cr, 0);
+	error = -zfs_remove(dir, dname(dentry), cr);
 
 	/*
 	 * For a CI FS we must invalidate the dentry to prevent the

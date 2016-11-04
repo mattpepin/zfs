@@ -311,14 +311,12 @@ get_usage(zpool_help_t idx) {
 		    "[-R root] [-F [-n]]\n"
 		    "\t    <pool | id> [newpool]\n"));
 	case HELP_IOSTAT:
-		return (gettext("\tiostat [-T d | u] [-ghHLpPvy] "
-		    "[[-lq]|[-r|-w]]\n"
-		    "\t    [[pool ...]|[pool vdev ...]|[vdev ...]] "
+		return (gettext("\tiostat [-gLPvy] [-T d|u] [pool] ... "
 		    "[interval [count]]\n"));
 	case HELP_LABELCLEAR:
 		return (gettext("\tlabelclear [-f] <vdev>\n"));
 	case HELP_LIST:
-		return (gettext("\tlist [-gHLpPv] [-o property[,...]] "
+		return (gettext("\tlist [-gHLPv] [-o property[,...]] "
 		    "[-T d|u] [pool] ... [interval [count]]\n"));
 	case HELP_OFFLINE:
 		return (gettext("\toffline [-t] <pool> <device> ...\n"));
@@ -2556,7 +2554,7 @@ error:
 }
 
 typedef struct iostat_cbdata {
-	uint64_t cb_flags;
+	boolean_t cb_verbose;
 	int cb_name_flags;
 	int cb_namewidth;
 	int cb_iteration;
@@ -3405,7 +3403,7 @@ children:
 
 		vname = zpool_vdev_name(g_zfs, zhp, newchild[c],
 		    cb->cb_name_flags);
-		ret += print_vdev_stats(zhp, vname, oldnv ? oldchild[c] : NULL,
+		print_vdev_stats(zhp, vname, oldnv ? oldchild[c] : NULL,
 		    newchild[c], cb, depth + 2);
 		free(vname);
 	}
@@ -3428,7 +3426,7 @@ children:
 			if (islog) {
 				vname = zpool_vdev_name(g_zfs, zhp, newchild[c],
 				    cb->cb_name_flags);
-				ret += print_vdev_stats(zhp, vname, oldnv ?
+				print_vdev_stats(zhp, vname, oldnv ?
 				    oldchild[c] : NULL, newchild[c],
 				    cb, depth + 2);
 				free(vname);
@@ -3457,8 +3455,8 @@ children:
 		for (c = 0; c < children; c++) {
 			vname = zpool_vdev_name(g_zfs, zhp, newchild[c],
 			    cb->cb_name_flags);
-			ret += print_vdev_stats(zhp, vname, oldnv ? oldchild[c]
-			    : NULL, newchild[c], cb, depth + 2);
+			print_vdev_stats(zhp, vname, oldnv ? oldchild[c] : NULL,
+			    newchild[c], cb, depth + 2);
 			free(vname);
 		}
 	}
@@ -3805,8 +3803,19 @@ is_pool_cb(zpool_handle_t *zhp, void *data)
 static int
 is_pool(char *name)
 {
-	return (for_each_pool(0, NULL, B_TRUE, NULL,  is_pool_cb, name));
-}
+	iostat_cbdata_t *cb = data;
+	nvlist_t *config, *nvroot;
+	int columns;
+
+	if ((config = zpool_get_config(zhp, NULL)) != NULL) {
+		verify(nvlist_lookup_nvlist(config, ZPOOL_CONFIG_VDEV_TREE,
+		    &nvroot) == 0);
+		if (!cb->cb_verbose)
+			cb->cb_namewidth = strlen(zpool_get_name(zhp));
+		else
+			cb->cb_namewidth = max_width(zhp, nvroot, 0,
+			    cb->cb_namewidth, cb->cb_name_flags);
+	}
 
 /* Are all our argv[] strings pool names?  If so return 1, 0 otherwise. */
 static int
@@ -3900,9 +3909,7 @@ fsleep(float sec) {
 
 
 /*
- * zpool iostat [-ghHLpPvy] [[-lq]|[-r|-w]] [-n name] [-T d|u]
- *		[[ pool ...]|[pool vdev ...]|[vdev ...]]
- *		[interval [count]]
+ * zpool iostat [-gLPv] [-T d|u] [pool] ... [interval [count]]
  *
  *	-g	Display guid for individual vdev name.
  *	-L	Follow links when resolving vdev path name.
@@ -3942,14 +3949,8 @@ zpool_do_iostat(int argc, char **argv)
 	boolean_t full_name = B_FALSE;
 	iostat_cbdata_t cb = { 0 };
 
-	/* Used for printing error message */
-	const char flag_to_arg[] = {[IOS_LATENCY] = 'l', [IOS_QUEUES] = 'q',
-	    [IOS_L_HISTO] = 'w', [IOS_RQ_HISTO] = 'r'};
-
-	uint64_t unsupported_flags;
-
 	/* check options */
-	while ((c = getopt(argc, argv, "gLPT:vyhplqrwH")) != -1) {
+	while ((c = getopt(argc, argv, "gLPT:vy")) != -1) {
 		switch (c) {
 		case 'g':
 			guid = B_TRUE;
@@ -4103,46 +4104,15 @@ zpool_do_iostat(int argc, char **argv)
 	 * Enter the main iostat loop.
 	 */
 	cb.cb_list = list;
-
-	if (l_histo) {
-		/*
-		 * Histograms tables look out of place when you try to display
-		 * them with the other stats, so make a rule that you can only
-		 * print histograms by themselves.
-		 */
-		cb.cb_flags = IOS_L_HISTO_M;
-	} else if (rq_histo) {
-		cb.cb_flags = IOS_RQ_HISTO_M;
-	} else {
-		cb.cb_flags = IOS_DEFAULT_M;
-		if (latency)
-			cb.cb_flags |= IOS_LATENCY_M;
-		if (queues)
-			cb.cb_flags |= IOS_QUEUES_M;
-	}
-
-	/*
-	 * See if the module supports all the stats we want to display.
-	 */
-	unsupported_flags = cb.cb_flags & ~get_stat_flags(list);
-	if (unsupported_flags) {
-		uint64_t f;
-		int idx;
-		fprintf(stderr,
-		    gettext("The loaded zfs module doesn't support:"));
-
-		/* for each bit set in unsupported_flags */
-		for (f = unsupported_flags; f; f &= ~(1ULL << idx)) {
-			idx = lowbit64(f) - 1;
-			fprintf(stderr, " -%c", flag_to_arg[idx]);
-		}
-
-		fprintf(stderr, ".  Try running a newer module.\n"),
-		pool_list_free(list);
-
-		return (1);
-	}
-
+	cb.cb_verbose = verbose;
+	if (guid)
+		cb.cb_name_flags |= VDEV_NAME_GUID;
+	if (follow_links)
+		cb.cb_name_flags |= VDEV_NAME_FOLLOW_LINKS;
+	if (full_name)
+		cb.cb_name_flags |= VDEV_NAME_PATH;
+	cb.cb_iteration = 0;
+	cb.cb_namewidth = 0;
 
 	for (;;) {
 		if ((npools = pool_list_count(list)) == 0)
@@ -4556,7 +4526,7 @@ list_callback(zpool_handle_t *zhp, void *data)
 }
 
 /*
- * zpool list [-gHLpP] [-o prop[,prop]*] [-T d|u] [pool] ... [interval [count]]
+ * zpool list [-gHLP] [-o prop[,prop]*] [-T d|u] [pool] ... [interval [count]]
  *
  *	-g	Display guid for individual vdev name.
  *	-H	Scripted mode.  Don't display headers, and separate properties
@@ -4565,7 +4535,6 @@ list_callback(zpool_handle_t *zhp, void *data)
  *	-o	List of properties to display.  Defaults to
  *		"name,size,allocated,free,expandsize,fragmentation,capacity,"
  *		"dedupratio,health,altroot"
- * 	-p	Display values in parsable (exact) format.
  *	-P	Display full path for vdev name.
  *	-T	Display a timestamp in date(1) or Unix format
  *
@@ -4588,7 +4557,7 @@ zpool_do_list(int argc, char **argv)
 	boolean_t first = B_TRUE;
 
 	/* check options */
-	while ((c = getopt(argc, argv, ":gHLo:pPT:v")) != -1) {
+	while ((c = getopt(argc, argv, ":gHLo:PT:v")) != -1) {
 		switch (c) {
 		case 'g':
 			cb.cb_name_flags |= VDEV_NAME_GUID;
@@ -4604,9 +4573,6 @@ zpool_do_list(int argc, char **argv)
 			break;
 		case 'P':
 			cb.cb_name_flags |= VDEV_NAME_PATH;
-			break;
-		case 'p':
-			cb.cb_literal = B_TRUE;
 			break;
 		case 'T':
 			get_timestamp_arg(*optarg);

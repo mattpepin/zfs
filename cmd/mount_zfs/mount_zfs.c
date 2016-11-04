@@ -33,7 +33,6 @@
 #include <libzfs.h>
 #include <locale.h>
 #include <getopt.h>
-#include <fcntl.h>
 
 #define	ZS_COMMENT	0x00000000	/* comment */
 #define	ZS_ZFSUTIL	0x00000001	/* caller is zfs(8) */
@@ -106,6 +105,8 @@ static const option_map_t option_map[] = {
 	{ MNTOPT_QUIET,		MS_SILENT,	ZS_COMMENT	},
 #endif
 	/* Custom zfs options */
+	{ MNTOPT_DIRXATTR,	MS_COMMENT,	ZS_COMMENT	},
+	{ MNTOPT_SAXATTR,	MS_COMMENT,	ZS_COMMENT	},
 	{ MNTOPT_XATTR,		MS_COMMENT,	ZS_COMMENT	},
 	{ MNTOPT_NOXATTR,	MS_COMMENT,	ZS_COMMENT	},
 	{ MNTOPT_ZFSUTIL,	MS_COMMENT,	ZS_ZFSUTIL	},

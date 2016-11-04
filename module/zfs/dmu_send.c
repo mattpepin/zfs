@@ -54,9 +54,7 @@
 #include <sys/blkptr.h>
 #include <sys/dsl_bookmark.h>
 #include <sys/zfeature.h>
-#include <sys/bqueue.h>
 #include <sys/zvol.h>
-#include <sys/policy.h>
 
 /* Set this tunable to TRUE to replace corrupt data with 0x2f5baddb10c */
 int zfs_send_corrupt_data = B_FALSE;

@@ -29,6 +29,7 @@
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
+ * Copyright (c) 2014, Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2016 Actifio, Inc. All rights reserved.
  */
 
@@ -1385,9 +1386,9 @@ get_zfs_sb(const char *dsname, zfs_sb_t **zsbp)
 
 	mutex_enter(&os->os_user_ptr_lock);
 	*zsbp = dmu_objset_get_user(os);
-	if (*zsbp && (*zsbp)->z_sb) {
-		atomic_inc(&((*zsbp)->z_sb->s_active));
-	} else {
+	/* bump s_active only when non-zero to prevent umount race */
+	if (*zsbp == NULL || (*zsbp)->z_sb == NULL ||
+	    !atomic_inc_not_zero(&((*zsbp)->z_sb->s_active))) {
 		error = SET_ERROR(ESRCH);
 	}
 	mutex_exit(&os->os_user_ptr_lock);
@@ -3189,25 +3190,8 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 	if (error == 0) {
 		error = zfs_set_prop_nvlist(fsname, ZPROP_SRC_LOCAL,
 		    nvprops, outnvl);
-		if (error != 0) {
-			spa_t *spa;
-			int error2;
-
-			/*
-			 * Volumes will return EBUSY and cannot be destroyed
-			 * until all asynchronous minor handling has completed.
-			 * Wait for the spa_zvol_taskq to drain then retry.
-			 */
-			error2 = dsl_destroy_head(fsname);
-			while ((error2 == EBUSY) && (type == DMU_OST_ZVOL)) {
-				error2 = spa_open(fsname, &spa, FTAG);
-				if (error2 == 0) {
-					taskq_wait(spa->spa_zvol_taskq);
-					spa_close(spa, FTAG);
-				}
-				error2 = dsl_destroy_head(fsname);
-			}
-		}
+		if (error != 0)
+			(void) dsl_destroy_head(fsname);
 	}
 	return (error);
 }

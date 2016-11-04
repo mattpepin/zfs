@@ -95,9 +95,7 @@ zpool \- configures ZFS storage pools
 
 .LP
 .nf
-\fB\fBzpool iostat\fR [\fB-T\fR \fBd\fR | \fBu\fR] [\fB-ghHLpPvy\fR] [\fB-lq\fR]|[\fB-r\fR|-\fBw\fR]]
-     [[\fIpool\fR ...]|[\fIpool vdev\fR ...]|[\fIvdev\fR ...]] [\fIinterval\fR[\fIcount\fR]]\fR
-
+\fBzpool iostat\fR [\fB-T\fR d | u ] [\fB-gLPvy\fR] [\fIpool\fR] ... [\fIinterval\fR[\fIcount\fR]]
 .fi
 
 .LP
@@ -107,7 +105,7 @@ zpool \- configures ZFS storage pools
 
 .LP
 .nf
-\fBzpool list\fR [\fB-T\fR d | u ] [\fB-HgLpPv\fR] [\fB-o\fR \fIproperty\fR[,...]] [\fIpool\fR] ...
+\fBzpool list\fR [\fB-T\fR d | u ] [\fB-HgLPv\fR] [\fB-o\fR \fIproperty\fR[,...]] [\fIpool\fR] ...
      [\fIinterval\fR[\fIcount\fR]]
 .fi
 
@@ -807,6 +805,28 @@ Display real paths for vdevs resolving all symbolic links. This can be used to l
 .sp
 .ne 2
 .na
+\fB\fB-g\fR\fR
+.ad
+.RS 6n
+.rt
+Display vdev GUIDs instead of the normal device names. These GUIDs can be used in place of device names for the zpool detach/offline/remove/replace commands.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-L\fR\fR
+.ad
+.RS 6n
+.rt
+Display real paths for vdevs resolving all symbolic links. This can be used to look up the current block device name regardless of the /dev/disk/ path used to open it.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
 \fB\fB-n\fR\fR
 .ad
 .RS 6n
@@ -824,6 +844,17 @@ Display full paths for vdevs instead of only the last component of the path.  Th
 
 .sp
 .ne 2
+.na
+\fB\fB-P\fR\fR
+.ad
+.RS 6n
+.rt
+Display full paths for vdevs instead of only the last component of the path.  This can be used in conjunction with the \fB-L\fR flag.
+.RE
+
+.sp
+.ne 2
+.mk
 .na
 \fB\fB-o\fR \fIproperty=value\fR
 .ad
@@ -1510,8 +1541,7 @@ Scan using the default search path, the libblkid cache will not be consulted.  A
 .sp
 .ne 2
 .na
-\fB\fBzpool iostat\fR [\fB-T\fR \fBd\fR | \fBu\fR] [\fB-ghHLpPvy\fR] [[\fB-lq\fR]|[\fB-r\fR|\fB-w\fR]] [[\fIpool\fR ...]|[\fIpool vdev\fR ...]|[\fIvdev\fR ...]] [\fIinterval\fR[\fIcount\fR]]\fR
-
+\fB\fBzpool iostat\fR [\fB-T\fR \fBd\fR | \fBu\fR] [\fB-gLPvy\fR] [\fIpool\fR] ... [\fIinterval\fR[\fIcount\fR]]\fR
 .ad
 .sp .6
 .RS 4n
@@ -1597,6 +1627,39 @@ be broken up before being sent to the block device.
 
 .sp
 .ne 2
+.na
+\fB\fB-g\fR\fR
+.ad
+.RS 12n
+.rt
+Display vdev GUIDs instead of the normal device names. These GUIDs can be used in place of device names for the zpool detach/offline/remove/replace commands.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-L\fR\fR
+.ad
+.RS 12n
+.rt
+Display real paths for vdevs resolving all symbolic links. This can be used to look up the current block device name regardless of the /dev/disk/ path used to open it.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-P\fR\fR
+.ad
+.RS 12n
+.rt
+Display full paths for vdevs instead of only the last component of the path.  This can be used in conjunction with the \fB-L\fR flag.
+.RE
+
+.sp
+.ne 2
+.mk
 .na
 \fB\fB-v\fR\fR
 .ad
@@ -1773,7 +1836,7 @@ Treat exported or foreign devices as inactive.
 .sp
 .ne 2
 .na
-\fB\fBzpool list\fR [\fB-T\fR \fBd\fR | \fBu\fR] [\fB-HgLpPv\fR] [\fB-o\fR \fIprops\fR[,...]] [\fIpool\fR] ... [\fIinterval\fR[\fIcount\fR]]\fR
+\fB\fBzpool list\fR [\fB-T\fR \fBd\fR | \fBu\fR] [\fB-HgLPv\fR] [\fB-o\fR \fIprops\fR[,...]] [\fIpool\fR] ... [\fIinterval\fR[\fIcount\fR]]\fR
 .ad
 .sp .6
 .RS 4n
@@ -1789,41 +1852,37 @@ Scripted mode. Do not display headers, and separate fields by a single tab inste
 
 .sp
 .ne 2
+.mk
 .na
 \fB\fB-g\fR\fR
 .ad
 .RS 12n
+.rt
 Display vdev GUIDs instead of the normal device names. These GUIDs can be used in place of device names for the zpool detach/offline/remove/replace commands.
 .RE
 
 .sp
 .ne 2
+.mk
 .na
 \fB\fB-L\fR\fR
 .ad
 .RS 12n
+.rt
 Display real paths for vdevs resolving all symbolic links. This can be used to look up the current block device name regardless of the /dev/disk/ path used to open it.
 .RE
 
 .sp
 .ne 2
-.na
-\fB\fB-p\fR\fR
-.ad
-.RS 12n
-Display numbers in parsable (exact) values.
-.RE
-
-.sp
-.ne 2
+.mk
 .na
 \fB\fB-P\fR\fR
 .ad
 .RS 12n
+.rt
 Display full paths for vdevs instead of only the last component of the path.  This can be used in conjunction with the \fB-L\fR flag.
 .RE
 
-.sp
 .ne 2
 .na
 \fB\fB-T\fR \fBd\fR | \fBu\fR\fR
@@ -2025,6 +2084,28 @@ Display real paths for vdevs resolving all symbolic links. This can be used to l
 .sp
 .ne 2
 .na
+\fB\fB-g\fR\fR
+.ad
+.RS 6n
+.rt
+Display vdev GUIDs instead of the normal device names. These GUIDs can be used in place of device names for the zpool detach/offline/remove/replace commands.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-L\fR\fR
+.ad
+.RS 6n
+.rt
+Display real paths for vdevs resolving all symbolic links. This can be used to look up the current block device name regardless of the /dev/disk/ path used to open it.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
 \fB\fB-n\fR \fR
 .ad
 .sp .6
@@ -2043,6 +2124,17 @@ Display full paths for vdevs instead of only the last component of the path.  Th
 
 .sp
 .ne 2
+.na
+\fB\fB-P\fR\fR
+.ad
+.RS 6n
+.rt
+Display full paths for vdevs instead of only the last component of the path.  This can be used in conjunction with the \fB-L\fR flag.
+.RE
+
+.sp
+.ne 2
+.mk
 .na
 \fB\fB-R\fR \fIaltroot\fR \fR
 .ad
@@ -2080,24 +2172,29 @@ If a scrub or resilver is in progress, this command reports the percentage done 
 \fB\fB-g\fR\fR
 .ad
 .RS 12n
+.rt
 Display vdev GUIDs instead of the normal device names. These GUIDs can be used innplace of device names for the zpool detach/offline/remove/replace commands.
 .RE
 
 .sp
 .ne 2
+.mk
 .na
 \fB\fB-L\fR\fR
 .ad
 .RS 12n
+.rt
 Display real paths for vdevs resolving all symbolic links. This can be used to look up the current block device name regardless of the /dev/disk/ path used to open it.
 .RE
 
 .sp
 .ne 2
+.mk
 .na
 \fB\fB-P\fR\fR
 .ad
 .RS 12n
+.rt
 Display full paths for vdevs instead of only the last component of the path.  This can be used in conjunction with the \fB-L\fR flag.
 .RE
 
@@ -2121,6 +2218,17 @@ Only display status for pools that are exhibiting errors or are otherwise unavai
 
 .sp
 .ne 2
+.na
+\fB\fB-x\fR\fR
+.ad
+.RS 12n
+.rt
+Only display status for pools that are exhibiting errors or are otherwise unavailable. Warnings about pools not using the latest on-disk format will not be included.
+.RE
+
+.sp
+.ne 2
+.mk
 .na
 \fB\fB-D\fR\fR
 .ad
@@ -2554,17 +2662,6 @@ Cause \fBzpool\fR subcommands to follow links for vdev names by default.  This b
 .B "ZPOOL_VDEV_NAME_PATH"
 Cause \fBzpool\fR subcommands to output full vdev path names by default.  This
 behavior is identical to the \fBzpool status -p\fR command line option.
-.TP
-.B "ZFS_VDEV_DEVID_OPT_OUT"
-Older ZFS on Linux implementations had issues when attempting to display pool
-config VDEV names if a "devid" NVP value is present in the pool's config.
-
-For example, a pool that originated on illumos platform would have a devid
-value in the config and \fBzpool status\fR would fail when listing the config.
-This would also be true for future Linux based pools.
-
-A pool can be stripped of any "devid" values on import or prevented from adding
-them on \fBzpool create\fR or \fBzpool add\fR by setting ZFS_VDEV_DEVID_OPT_OUT.
 
 .SH SEE ALSO
 .sp

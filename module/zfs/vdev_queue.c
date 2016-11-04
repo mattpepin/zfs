@@ -621,6 +621,10 @@ vdev_queue_aggregate(vdev_queue_t *vq, zio_t *zio)
 	if (buf == NULL)
 		return (NULL);
 
+	buf = zio_buf_alloc_flags(size, KM_NOSLEEP);
+	if (buf == NULL)
+		return (NULL);
+
 	aio = zio_vdev_delegated_io(first->io_vd, first->io_offset,
 	    buf, size, first->io_type, zio->io_priority,
 	    flags | ZIO_FLAG_DONT_CACHE | ZIO_FLAG_DONT_QUEUE,

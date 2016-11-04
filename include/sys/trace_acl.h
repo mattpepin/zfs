@@ -119,8 +119,9 @@ DECLARE_EVENT_CLASS(zfs_ace_class,
 	),
 	TP_printk("zn { id %llu unlinked %u atime_dirty %u "
 	    "zn_prefetch %u moved %u blksz %u seq %u "
-	    "mapcnt %llu size %llu links %llu pflags %llu "
-	    "uid %llu gid %llu sync_cnt %u mode 0x%x is_sa %d "
+	    "mapcnt %llu gen %llu size %llu atime 0x%llx:0x%llx "
+	    "links %llu pflags %llu uid %llu gid %llu "
+	    "sync_cnt %u mode 0x%x is_sa %d "
 	    "is_mapped %d is_ctldir %d is_stale %d inode { "
 	    "ino %lu nlink %u version %llu size %lli blkbits %u "
 	    "bytes %u mode 0x%x generation %x } } ace { type %u "
