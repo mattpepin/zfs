@@ -84,6 +84,8 @@
 #include <sys/vfs.h>
 #include <sys/zpl.h>
 
+int zpl_bsd_xattr = 1;
+
 typedef struct xattr_filldir {
 	size_t size;
 	size_t offset;
@@ -129,20 +131,33 @@ zpl_xattr_permission(xattr_filldir_t *xf, const char *name, int name_len)
 static int
 zpl_xattr_filldir(xattr_filldir_t *xf, const char *name, int name_len)
 {
+	int prefix_len = 0;
+
 	/* Check permissions using the per-namespace list xattr handler. */
-	if (!zpl_xattr_permission(xf, name, name_len))
-		return (0);
+	if (!zpl_xattr_permission(xf, name, name_len)) {
+		if (zpl_bsd_xattr) {
+			if (zpl_xattr_handler(name))
+				return (0);
+			else
+				prefix_len = strlen(XATTR_USER_PREFIX);
+		} else {
+			return (0);
+		}
+	}
 
 	/* When xf->buf is NULL only calculate the required size. */
 	if (xf->buf) {
 		if (xf->offset + name_len + 1 > xf->size)
 			return (-ERANGE);
 
-		memcpy(xf->buf + xf->offset, name, name_len);
-		xf->buf[xf->offset + name_len] = '\0';
+		if (zpl_bsd_xattr)
+			memcpy(xf->buf + xf->offset, XATTR_USER_PREFIX, prefix_len);
+
+		memcpy(xf->buf + xf->offset + prefix_len, name, name_len);
+		xf->buf[xf->offset + +prefix_len + name_len] = '\0';
 	}
 
-	xf->offset += (name_len + 1);
+	xf->offset += (prefix_len + name_len + 1);
 
 	return (0);
 }
@@ -700,6 +715,9 @@ __zpl_xattr_user_get(struct inode *ip, const char *name,
 	error = zpl_xattr_get(ip, xattr_name, value, size);
 	strfree(xattr_name);
 
+	if (error < 0 && zpl_bsd_xattr)
+		error = zpl_xattr_get(ip, name, value, size);
+
 	return (error);
 }
 ZPL_XATTR_GET_WRAPPER(zpl_xattr_user_get);
@@ -718,9 +736,19 @@ __zpl_xattr_user_set(struct inode *ip, const char *name,
 	if (!(ITOZSB(ip)->z_flags & ZSB_XATTR))
 		return (-EOPNOTSUPP);
 
-	xattr_name = kmem_asprintf("%s%s", XATTR_USER_PREFIX, name);
-	error = zpl_xattr_set(ip, xattr_name, value, size, flags);
-	strfree(xattr_name);
+	if (zpl_bsd_xattr < 2) {
+		xattr_name = kmem_asprintf("%s%s", XATTR_USER_PREFIX, name);
+		error = zpl_xattr_set(ip, xattr_name, value, size, flags);
+		strfree(xattr_name);
+	} else {
+		/* store prefix-less bsd-style xattr */
+		error = zpl_xattr_set(ip, name, value, size, flags);
+	}
+
+	if (zpl_bsd_xattr == 1) {
+		/* clear prefix-less bsd-style xattr */
+		zpl_xattr_set(ip, name, NULL, 0, XATTR_REPLACE);
+	}
 
 	return (error);
 }
@@ -1441,3 +1469,6 @@ zpl_xattr_handler(const char *name)
 
 	return (NULL);
 }
+
+module_param(zpl_bsd_xattr, int, 1);
+MODULE_PARM_DESC(zpl_bsd_xattr, "Support BSD-style prefix-less user xattr");
